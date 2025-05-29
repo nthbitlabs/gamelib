@@ -9,12 +9,12 @@ interface MqttClientWrapperOptions extends IClientOptions {
 }
 
 interface ConnectionStatus {
-    connecting(): void;
-    connected(): void;
-    disconnected(): void;
-    timedout(): void;
-    closed(): void;
-    error(): void;
+    connecting?(): void;
+    connected?(): void;
+    disconnected?(): void;
+    timedout?(): void;
+    closed?(): void;
+    error?(): void;
 }
 
 export class MqttClientWrapper {
