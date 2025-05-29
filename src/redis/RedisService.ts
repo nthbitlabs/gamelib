@@ -4,7 +4,7 @@ import { createPool, Pool } from 'generic-pool';
 interface ConnectionStatus {
     connect?(): void;
     ready?(): void;
-    error?(): void;
+    error?(err: any): void;
     close?(): void;
     reconnecting?(): void;
 };
@@ -68,11 +68,31 @@ export class RedisService {
     }
 
     private setupListeners(client: RedisType) {
-        client.on('connect', () => this.callback.connect);
-        client.on('ready', () => this.callback.ready);
-        client.on('error', (err) => this.callback.error);
-        client.on('close', () => this.callback.close);
-        client.on('reconnecting', () => this.callback.reconnecting);
+        client.on('connect', () => {
+            if (this.callback.connect &&
+                typeof this.callback.connect === 'function')
+                this.callback.connect();
+        });
+        client.on('ready', () => {
+            if (this.callback.ready &&
+                typeof this.callback.ready === 'function')
+                this.callback.ready();
+        });
+        client.on('error', (err) => {
+            if (this.callback.error &&
+                typeof this.callback.error === 'function')
+                this.callback.error(err);
+        });
+        client.on('close', () => {
+            if (this.callback.close &&
+                typeof this.callback.close === 'function')
+                this.callback.close();
+        });
+        client.on('reconnecting', () => {
+            if (this.callback.reconnecting &&
+                typeof this.callback.reconnecting === 'function')
+                this.callback.reconnecting();
+        });
     }
 
     private async withClient<T>(action: (client: RedisType) => Promise<T>): Promise<T> {
