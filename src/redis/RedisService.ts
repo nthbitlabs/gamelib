@@ -1,7 +1,7 @@
 import Redis, { Redis as RedisType, RedisOptions } from 'ioredis';
 import { createPool, Pool } from 'generic-pool';
 
-export interface ExtendedredisOptions extends RedisOptions {
+interface ConnectionStatus {
     connect?(): void;
     ready?(): void;
     error?(): void;
@@ -11,20 +11,22 @@ export interface ExtendedredisOptions extends RedisOptions {
 
 export class RedisService {
     private static instance: RedisService;
+    private readonly callback: ConnectionStatus;
     private pool: Pool<RedisType> | null = null;
     private initPromise: Promise<void> | null = null;
 
-    private constructor(private options: ExtendedredisOptions) {
+    private constructor(private options: RedisOptions, connstatus: ConnectionStatus) {
         options.retryStrategy = (times) => {
             if (times > 10) return null;
             return Math.min(times * 100, 2000);
         };
+        this.callback = connstatus;
     }
 
-    static getInstance(options?: RedisOptions): RedisService {
+    static getInstance(options?: RedisOptions, callback?: ConnectionStatus): RedisService {
         if (!RedisService.instance) {
-            if (!options) throw new Error('Redis service must be initialized with options on first use');
-            RedisService.instance = new RedisService(options);
+            if (!options || !callback) throw new Error('Redis service must be initialized with options on first use');
+            RedisService.instance = new RedisService(options, callback);
         }
         return RedisService.instance;
     }
@@ -66,11 +68,11 @@ export class RedisService {
     }
 
     private setupListeners(client: RedisType) {
-        client.on('connect', () => this.options.connect);
-        client.on('ready', () => this.options.ready);
-        client.on('error', (err) => this.options.error);
-        client.on('close', () => this.options.close);
-        client.on('reconnecting', () => this.options.reconnecting);
+        client.on('connect', () => this.callback.connect);
+        client.on('ready', () => this.callback.ready);
+        client.on('error', (err) => this.callback.error);
+        client.on('close', () => this.callback.close);
+        client.on('reconnecting', () => this.callback.reconnecting);
     }
 
     private async withClient<T>(action: (client: RedisType) => Promise<T>): Promise<T> {
