@@ -1,5 +1,4 @@
 import mqtt, { MqttClient, IClientOptions, IConnackPacket, Packet } from 'mqtt';
-import { Logger } from '../logger';
 
 type EventHandler = (topic: string, message: Buffer, packet: Packet) => void;
 
@@ -10,7 +9,12 @@ interface MqttClientWrapperOptions extends IClientOptions {
 }
 
 interface ConnectionStatus {
+    connecting(): void;
     connected(): void;
+    disconnected(): void;
+    timedout(): void;
+    closed(): void;
+    error(): void;
 }
 
 export class MqttClientWrapper {
@@ -27,18 +31,16 @@ export class MqttClientWrapper {
     private connectionTimeoutId: NodeJS.Timeout | null = null;
     private isExplicitlyDisconnected: boolean = false;
 
-    private readonly logger: Logger = Logger.getInstance();
-
     constructor(url: string,
         options: MqttClientWrapperOptions = {},
-        connected: ConnectionStatus) {
+        connstatus: ConnectionStatus) {
         this.url = url;
         this.options = options;
         this.reconnectInterval = options.reconnectInterval ?? 1000;
         this.maxReconnectInterval = options.maxReconnectInterval ?? 30000;
         this.currentReconnectInterval = this.reconnectInterval;
         this.connectionTimeout = options.connectionTimeout ?? 5000;
-        this.callback = connected;
+        this.callback = connstatus;
     }
 
     public connect(): void {
@@ -47,46 +49,68 @@ export class MqttClientWrapper {
         }
 
         this.isExplicitlyDisconnected = false;
+
+        //inform the caller connection in progress
+        if (this.callback.connecting &&
+            typeof this.callback.connecting === 'function')
+            this.callback.connecting();
+
         this.client = mqtt.connect(this.url, this.options);
 
         this.connectionTimeoutId = setTimeout(() => {
-            this.logger.warn('MQTT connection timed out');
+            if (this.callback.timedout &&
+                typeof this.callback.timedout === 'function')
+                this.callback.timedout();
             this.client?.end(true);
         }, this.connectionTimeout);
 
         this.client.once('connect', (packet: IConnackPacket) => {
             clearTimeout(this.connectionTimeoutId!);
-            this.logger.info('MQTT connected');
             this.currentReconnectInterval = this.reconnectInterval;
-            this.callback.connected();
+            if (this.callback.connected &&
+                typeof this.callback.connected === 'function')
+                this.callback.connected();
         });
 
         this.client.on('message', (topic: string, message: Buffer, packet: Packet) => {
-            const handler = this.eventHandlers.get(topic);
-            if (handler) {
-                handler(topic, message, packet);
-            } else {
-                this.logger.warn(`No handler registered for topic "${topic}"`);
+            try {
+                const handler = this.eventHandlers.get(topic);
+                if (handler) {
+                    handler(topic, message, packet);
+                } else {
+                    throw new Error(`No handler registered for topic "${topic}"`);
+                }
+            }
+            catch (err: any) {
+                console.error(err.message);
             }
         });
 
         this.client.on('close', () => {
-            this.logger.warn('MQTT connection closed.');
+            if (this.callback.closed &&
+                typeof this.callback.closed === 'function')
+                this.callback.closed();
             if (!this.isExplicitlyDisconnected) {
-                this.logger.info('Attempting to reconnect...');
                 this.reconnectWithBackoff();
             }
         });
 
         this.client.on('error', (error: Error) => {
-            this.logger.error('MQTT error:', error.message);
+            if (this.callback.error &&
+                typeof this.callback.error === 'function')
+                this.callback.error();
+            console.error('MQTT error:', error.message);
             clearTimeout(this.connectionTimeoutId!);
         });
     }
 
     private reconnectWithBackoff() {
         this.reconnectTimeoutId = setTimeout(() => {
-            this.logger.info(`Reconnecting to MQTT broker... (${this.currentReconnectInterval}ms)`);
+            //inform the caller connection in progress
+            if (this.callback.connecting &&
+                typeof this.callback.connecting === 'function')
+                this.callback.connecting();
+
             this.connect();
             this.currentReconnectInterval = Math.min(
                 this.currentReconnectInterval * 2,
@@ -99,9 +123,7 @@ export class MqttClientWrapper {
         if (!this.client) throw new Error('MQTT client not connected');
         this.client.subscribe(topic, (err) => {
             if (err) {
-                this.logger.error(`Failed to subscribe to topic "${topic}"`, err);
-            } else {
-                this.logger.info(`Subscribed to topic "${topic}"`);
+                console.error(`Failed to subscribe to topic "${topic}"`, err);
             }
         });
     }
@@ -110,7 +132,7 @@ export class MqttClientWrapper {
         if (!this.client) throw new Error('MQTT client not connected');
         this.client.publish(topic, message, (err) => {
             if (err) {
-                this.logger.error(`Failed to publish to topic "${topic}"`, err);
+                console.error(`Failed to publish to topic "${topic}"`, err);
             }
         });
     }
@@ -119,7 +141,7 @@ export class MqttClientWrapper {
         if (!this.client) throw new Error('MQTT client not connected');
         this.client.unsubscribe(topic, (err) => {
             if (err) {
-                this.logger.error(`Failed to unsubscribe from topic "${topic}"`, err);
+                console.error(`Failed to unsubscribe from topic "${topic}"`, err);
             }
         });
     }
@@ -135,7 +157,6 @@ export class MqttClientWrapper {
     }
 
     public disconnect(): void {
-        this.logger.warn('Disconnecting MQTT client...');
         this.isExplicitlyDisconnected = true;
 
         if (this.reconnectTimeoutId) {
@@ -152,7 +173,11 @@ export class MqttClientWrapper {
 
         if (this.client) {
             this.client.end(true, () => {
-                this.logger.warn('MQTT client disconnected');
+                //inform the caller connection in progress
+                if (this.callback.disconnected &&
+                    typeof this.callback.disconnected === 'function')
+                    this.callback.disconnected();
+
                 this.client = null;
             });
         }
