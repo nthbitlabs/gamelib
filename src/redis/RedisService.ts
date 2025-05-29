@@ -1,14 +1,20 @@
 import Redis, { Redis as RedisType, RedisOptions } from 'ioredis';
 import { createPool, Pool } from 'generic-pool';
-import { Logger } from '../logger';
+
+export interface ExtendedredisOptions extends RedisOptions {
+    connect?(): void;
+    ready?(): void;
+    error?(): void;
+    close?(): void;
+    reconnecting?(): void;
+};
 
 export class RedisService {
     private static instance: RedisService;
     private pool: Pool<RedisType> | null = null;
     private initPromise: Promise<void> | null = null;
-    private readonly logger: Logger = Logger.getInstance();
 
-    private constructor(private options: RedisOptions) {
+    private constructor(private options: ExtendedredisOptions) {
         options.retryStrategy = (times) => {
             if (times > 10) return null;
             return Math.min(times * 100, 2000);
@@ -60,11 +66,11 @@ export class RedisService {
     }
 
     private setupListeners(client: RedisType) {
-        client.on('connect', () => { }/*this.logger.info('Redis Connected')*/);
-        client.on('ready', () => { } /*this.logger.info('Redis Ready')*/);
-        client.on('error', (err) => this.logger.error('Redis Error:', err));
-        client.on('close', () => this.logger.warn('Redis Closed'));
-        client.on('reconnecting', () => this.logger.info('Redis Reconnecting...'));
+        client.on('connect', () => this.options.connect);
+        client.on('ready', () => this.options.ready);
+        client.on('error', (err) => this.options.error);
+        client.on('close', () => this.options.close);
+        client.on('reconnecting', () => this.options.reconnecting);
     }
 
     private async withClient<T>(action: (client: RedisType) => Promise<T>): Promise<T> {
@@ -115,7 +121,7 @@ export class RedisService {
             await this.pool.clear();
             this.pool = null;
             this.initPromise = null;
-            this.logger.info('Redis Pool shutdown complete');
+            console.log(`Redis shutdown complete`);
         }
     }
 }
