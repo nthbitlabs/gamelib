@@ -15,7 +15,7 @@ export class RedisService {
         };
     }
 
-    static getInstance(options: RedisOptions): RedisService {
+    static getInstance(options?: RedisOptions): RedisService {
         if (!RedisService.instance) {
             if (!options) throw new Error('Redis service must be initialized with options on first use');
             RedisService.instance = new RedisService(options);
