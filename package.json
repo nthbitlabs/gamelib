@@ -1,0 +1,29 @@
+{
+    "name": "@nthbitlabs/gamelib",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "prepublishOnly": "npm run build"
+    },
+    "files": [
+        "dist"
+    ],
+    "license": "MIT",
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com/"
+    },
+    "devDependencies": {
+        "@types/node": "^22.15.24",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "generic-pool": "^3.9.0",
+        "ioredis": "^5.6.1",
+        "mqtt": "^5.13.0",
+        "winston": "^3.17.0",
+        "winston-daily-rotate-file": "^5.0.0",
+        "winston-slack-webhook-transport": "^2.3.6"
+    }
+}
