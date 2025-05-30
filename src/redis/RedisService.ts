@@ -61,12 +61,12 @@ export class RedisService {
      * @returns RedisService instance (singleton)
      * @author Vikas Sood
      */
-    static async getInstance(
+    static async init(
         options?: RedisOptions,
         callback?: ConnectionStatus,
         logger?: Logger
-    ): Promise<RedisService> {
-        if (RedisService.instance) return RedisService.instance;
+    ): Promise<void> {
+        if (RedisService.instance) return;
 
         if (!options || !callback) {
             throw new Error('Redis service must be initialized with options on first use');
@@ -79,7 +79,13 @@ export class RedisService {
         }
 
         await RedisService.initLock;
-        return RedisService.instance!;
+    }
+
+    static getInstance(): RedisService {
+        if (!RedisService.instance) {
+            throw new Error('RedisService has not been initialized. Call init() first.');
+        }
+        return RedisService.instance;
     }
 
     /**
