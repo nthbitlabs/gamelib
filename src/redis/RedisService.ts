@@ -32,6 +32,13 @@ export class RedisService {
     private pool: Pool<RedisType> | null = null;
     private initPromise: Promise<void> | null = null;
 
+    /**
+     * @constructor
+     * @param options Redis client options
+     * @param connstatus Optional connection lifecycle callbacks
+     * @param logger Optional logger for debug/info/error messages
+     * @author Vikas Sood
+     */
     private constructor(
         options: RedisOptions,
         connstatus: ConnectionStatus,
@@ -46,6 +53,14 @@ export class RedisService {
         this.logger = logger ?? defaultLogger;
     }
 
+    /**
+     * Get or create a singleton instance of RedisService
+     * @param options Redis connection options (required on first call)
+     * @param callback Connection lifecycle callbacks (required on first call)
+     * @param logger Optional logger instance
+     * @returns RedisService instance (singleton)
+     * @author Vikas Sood
+     */
     static async getInstance(
         options?: RedisOptions,
         callback?: ConnectionStatus,
@@ -67,6 +82,12 @@ export class RedisService {
         return RedisService.instance!;
     }
 
+    /**
+     * Lazily initializes the Redis connection pool
+     * @private
+     * @returns void
+     * @author Vikas Sood
+     */
     private async initPool(): Promise<void> {
         if (this.pool) return;
 
@@ -106,15 +127,22 @@ export class RedisService {
         await this.initPromise;
     }
 
+    /**
+     * Attaches event listeners to a Redis client instance
+     * @param client Redis client instance
+     * @private
+     * @returns void
+     * @author Vikas Sood
+     */
     private setupListeners(client: RedisType) {
         if (this.callback.connect) {
-            client.on('connect', (...args) => {
+            client.on('connect', () => {
                 this.logger.info('Redis connected');
                 this.callback.connect?.();
             });
         }
         if (this.callback.ready) {
-            client.on('ready', (...args) => {
+            client.on('ready', () => {
                 this.logger.info('Redis ready');
                 this.callback.ready?.();
             });
@@ -126,19 +154,25 @@ export class RedisService {
             });
         }
         if (this.callback.close) {
-            client.on('close', (...args) => {
+            client.on('close', () => {
                 this.logger.info('Redis connection closed');
                 this.callback.close?.();
             });
         }
         if (this.callback.reconnecting) {
-            client.on('reconnecting', (...args) => {
+            client.on('reconnecting', () => {
                 this.logger.warn('Redis reconnecting...');
                 this.callback.reconnecting?.();
             });
         }
     }
 
+    /**
+     * Acquires a client from the pool and runs the provided async action
+     * @param action Function that uses a Redis client
+     * @returns Result of the async action execution with Redis client instance provided as argument to the function you supply here.
+     * @author Vikas Sood
+     */
     private async withClient<T>(action: (client: RedisType) => Promise<T>): Promise<T> {
         await this.initPool();
         const client = await this.pool!.acquire();
@@ -154,6 +188,14 @@ export class RedisService {
         }
     }
 
+    /**
+     * Sets a key-value pair in Redis (JSON serialized)
+     * @param key Redis key
+     * @param value Serializable value
+     * @param ttlInSeconds Optional TTL in seconds
+     * @returns void. If TTL is provided, Redis key expires after specified seconds. Otherwise, it persists.
+     * @author Vikas Sood
+     */
     async set<T>(key: string, value: T, ttlInSeconds?: number): Promise<void> {
         await this.withClient(async (client) => {
             const json = JSON.stringify(value);
@@ -165,6 +207,12 @@ export class RedisService {
         });
     }
 
+    /**
+     * Gets and parses a key's value from Redis
+     * @param key Redis key
+     * @returns Parsed value or null if not found or parsing fails (in which case error is logged too)
+     * @author Vikas Sood
+     */
     async get<T>(key: string): Promise<T | null> {
         return this.withClient(async (client) => {
             const val = await client.get(key);
@@ -178,6 +226,15 @@ export class RedisService {
         });
     }
 
+    /**
+     * Updates an existing key in Redis
+     * @param key Redis key
+     * @param value New value
+     * @param ttlInSeconds Optional TTL to reset
+     * @returns void
+     * @throws Error if key does not exist in Redis at time of update attempt
+     * @author Vikas Sood
+     */
     async update<T>(key: string, value: T, ttlInSeconds?: number): Promise<void> {
         await this.withClient(async (client) => {
             const exists = await client.exists(key);
@@ -186,12 +243,24 @@ export class RedisService {
         });
     }
 
+    /**
+     * Removes a key from Redis
+     * @param key Redis key
+     * @returns void. Key is permanently deleted from Redis if it exists, no-op otherwise.
+     * @author Vikas Sood
+     */
     async remove(key: string): Promise<void> {
         await this.withClient(async (client) => {
             await client.del(key);
         });
     }
 
+    /**
+     * Checks if a key exists in Redis
+     * @param key Redis key
+     * @returns true if key exists, false otherwise. Redis command used: EXISTS.
+     * @author Vikas Sood
+     */
     async has(key: string): Promise<boolean> {
         return this.withClient(async (client) => {
             const exists = await client.exists(key);
@@ -199,10 +268,21 @@ export class RedisService {
         });
     }
 
+    /**
+     * Provides direct access to a Redis client for custom operations
+     * @param fn Function using the raw Redis client
+     * @returns Result of the custom operation supplied by the caller as a function
+     * @author Vikas Sood
+     */
     async useRawClient<T>(fn: (client: RedisType) => Promise<T>): Promise<T> {
         return this.withClient(fn);
     }
 
+    /**
+     * Gracefully shuts down the Redis connection pool
+     * @returns void. All pooled clients are drained and destroyed. Instance can be reinitialized afterward.
+     * @author Vikas Sood
+     */
     async shutdown(): Promise<void> {
         if (this.pool) {
             await this.pool.drain();
