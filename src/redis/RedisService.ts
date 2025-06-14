@@ -262,6 +262,116 @@ export class RedisService {
     }
 
     /**
+     * Scans Redis keys matching a pattern.
+     * @param pattern Glob pattern (e.g., "user:*")
+     * @param count Approximate number of keys to return per scan iteration
+     * @returns All matching keys
+     */
+    async scanKeys(pattern: string, count: number = 100): Promise<string[]> {
+        const keys: string[] = [];
+
+        await this.withClient(async (client) => {
+            let cursor = '0';
+            do {
+                const [nextCursor, batch] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+                cursor = nextCursor;
+                keys.push(...batch);
+            } while (cursor !== '0');
+        });
+
+        return keys;
+    }
+
+    /**
+     * Scans Redis keys with pattern and fetches raw string values.
+     * @param pattern Glob pattern (e.g., "session:*")
+     * @param count Approximate number of keys to fetch per scan
+     * @returns Map of key-value pairs (values are raw strings or null if missing)
+     */
+    async scanAndGet(pattern: string, count: number = 100): Promise<Record<string, string | null>> {
+        const result: Record<string, string | null> = {};
+
+        await this.withClient(async (client) => {
+            let cursor = '0';
+            do {
+                const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+                cursor = nextCursor;
+
+                if (keys.length > 0) {
+                    const values = await client.mget(...keys);
+                    keys.forEach((key, i) => {
+                        result[key] = values[i] ?? null;
+                    });
+                }
+            } while (cursor !== '0');
+        });
+
+        return result;
+    }
+
+    /**
+     * Performs a single SCAN iteration to support paginated scanning.
+     * @param cursor The SCAN cursor to resume from (use "0" for first call)
+     * @param pattern Key pattern (e.g., "log:*")
+     * @param count Approximate number of keys to return
+     * @returns Object with next cursor and keys
+     */
+    async scanKeysCursor(
+        cursor: string,
+        pattern: string,
+        count: number = 100
+    ): Promise<{ cursor: string; keys: string[] }> {
+        return this.withClient(async (client) => {
+            const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+            return { cursor: nextCursor, keys };
+        });
+    }
+
+    /**
+     * Performs a single SCAN iteration and fetches parsed JSON values.
+     * @param cursor The SCAN cursor to resume from (use "0" for first call)
+     * @param pattern Key pattern
+     * @param count Approximate number of keys to return
+     * @returns Object with next cursor and parsed key-value map
+     */
+    async scanAndGetJSONCursor<T = any>(
+        cursor: string,
+        pattern: string,
+        count: number = 100
+    ): Promise<{ cursor: string; result: Record<string, T | null> }> {
+        return this.withClient(async (client) => {
+            const result: Record<string, T | null> = {};
+            const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+
+            if (keys.length > 0) {
+                const pipeline = client.pipeline();
+                keys.forEach((key) => pipeline.get(key));
+                const responses = await pipeline.exec();
+
+                // Ensure responses is non-null and length matches
+                if (responses && responses.length === keys.length) {
+                    keys.forEach((key, idx) => {
+                        const response = responses[idx];
+                        const raw = Array.isArray(response) ? response[1] : null;
+
+                        if (typeof raw === 'string') {
+                            try {
+                                result[key] = JSON.parse(raw);
+                            } catch {
+                                result[key] = null;
+                            }
+                        } else {
+                            result[key] = null;
+                        }
+                    });
+                }
+            }
+
+            return { cursor: nextCursor, result };
+        });
+    }
+
+    /**
      * Checks if a key exists in Redis
      * @param key Redis key
      * @returns true if key exists, false otherwise. Redis command used: EXISTS.
