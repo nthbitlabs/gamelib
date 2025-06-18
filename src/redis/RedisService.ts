@@ -143,13 +143,11 @@ export class RedisService {
     private setupListeners(client: RedisType) {
         if (this.callback.connect) {
             client.on('connect', () => {
-                this.logger.info('Redis connected');
                 this.callback.connect?.();
             });
         }
         if (this.callback.ready) {
             client.on('ready', () => {
-                this.logger.info('Redis ready');
                 this.callback.ready?.();
             });
         }
@@ -182,7 +180,6 @@ export class RedisService {
     private async withClient<T>(action: (client: RedisType) => Promise<T>): Promise<T> {
         await this.initPool();
         const client = await this.pool!.acquire();
-        this.logger.info('Redis client acquired');
         try {
             return await action(client);
         } catch (err) {
@@ -190,7 +187,6 @@ export class RedisService {
             throw err;
         } finally {
             this.pool!.release(client);
-            this.logger.info('Redis client released');
         }
     }
 
