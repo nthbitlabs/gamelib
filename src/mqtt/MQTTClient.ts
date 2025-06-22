@@ -212,10 +212,19 @@ export class MqttClientWrapper {
             const p = patternSegments[i];
             const t = topicSegments[i];
 
-            if (p === '#') return true;
-            if (!t) return false;
-            if (p === '+') continue;
-            if (p !== t) return false;
+            if (p === '#') {
+                // '#' must be last in the pattern
+                return i === patternSegments.length - 1;
+            }
+
+            if (p === '+') {
+                if (!t) return false;
+                continue;
+            }
+
+            if (p !== t) {
+                return false;
+            }
         }
 
         return patternSegments.length === topicSegments.length;
