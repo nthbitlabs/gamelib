@@ -74,6 +74,22 @@ export class MqttClientWrapper {
 
         this.client.on('message', (topic: string, message: Buffer, packet: Packet) => {
             try {
+                let matched = false;
+                for (const [pattern, handler] of this.eventHandlers.entries()) {
+                    if (this.matchTopic(pattern, topic)) {
+                        handler(topic, message, packet);
+                        matched = true;
+                    }
+                }
+
+                if (!matched) {
+                    console.warn(`No handler matched for topic "${topic}"`);
+                }
+            } catch (err: any) {
+                console.error('Error in message handler:', err);
+            }
+            /*
+            try {
                 const handler = this.eventHandlers.get(topic);
                 if (handler) {
                     handler(topic, message, packet);
@@ -84,6 +100,7 @@ export class MqttClientWrapper {
             catch (err: any) {
                 console.error(err.message);
             }
+            */
         });
 
         this.client.on('close', () => {
@@ -185,5 +202,22 @@ export class MqttClientWrapper {
 
     public isConnected(): boolean {
         return this.client?.connected ?? false;
+    }
+
+    private matchTopic(pattern: string, topic: string): boolean {
+        const patternSegments = pattern.split('/');
+        const topicSegments = topic.split('/');
+
+        for (let i = 0; i < patternSegments.length; i++) {
+            const p = patternSegments[i];
+            const t = topicSegments[i];
+
+            if (p === '#') return true;
+            if (!t) return false;
+            if (p === '+') continue;
+            if (p !== t) return false;
+        }
+
+        return patternSegments.length === topicSegments.length;
     }
 }
